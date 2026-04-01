@@ -1,61 +1,107 @@
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const NodeCache = require('node-cache');
 const cors = require('cors');
 const path = require('path');
+const { RestClient } = require('@fugle/marketdata');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const FUGLE_API_KEY = process.env.FUGLE_API_KEY;
 
 // Cache: stock 60s, PTT/Dcard 5min
 const stockCache = new NodeCache({ stdTTL: 60 });
 const newsCache = new NodeCache({ stdTTL: 300 });
 
+// Fugle REST client (只在有 API key 時初始化)
+const fugle = FUGLE_API_KEY ? new RestClient({ apiKey: FUGLE_API_KEY }) : null;
+
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── 台股即時股價 (TWSE API) ────────────────────────────────────────────────
+// ─── 股價：優先 Fugle，fallback TWSE ────────────────────────────────────────
+async function fetchStockFromFugle() {
+  const quote = await fugle.stock.intraday.quote({ symbolId: '2330' });
+  const price = quote.closePrice ?? quote.lastPrice ?? quote.previousClose;
+  const yesterday = quote.previousClose;
+  const change = +(price - yesterday).toFixed(2);
+  const changePct = +((change / yesterday) * 100).toFixed(2);
+
+  return {
+    symbol: '2330',
+    name: quote.name || '台積電',
+    price,
+    open: quote.openPrice,
+    high: quote.highPrice,
+    low: quote.lowPrice,
+    yesterday,
+    change,
+    changePct,
+    volume: quote.total?.tradeVolume ?? null,   // 張
+    time: quote.lastUpdated
+      ? new Date(quote.lastUpdated).toLocaleTimeString('zh-TW')
+      : '--',
+    date: new Date().toLocaleDateString('zh-TW'),
+    source: 'Fugle',
+  };
+}
+
+async function fetchStockFromTWSE() {
+  const { data } = await axios.get(
+    'https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_2330.tw&json=1&delay=0',
+    { headers: { 'Referer': 'https://mis.twse.com.tw/' }, timeout: 8000 }
+  );
+  const d = data?.msgArray?.[0];
+  if (!d) throw new Error('TWSE API 無資料');
+
+  const price = parseFloat(d.z || d.y);
+  const yesterday = parseFloat(d.y);
+  const change = +(price - yesterday).toFixed(2);
+  const changePct = +((change / yesterday) * 100).toFixed(2);
+
+  return {
+    symbol: '2330',
+    name: d.n || '台積電',
+    price,
+    open: parseFloat(d.o),
+    high: parseFloat(d.h),
+    low: parseFloat(d.l),
+    yesterday,
+    change,
+    changePct,
+    volume: Math.round(parseInt(d.v || 0) / 1000),
+    time: d.t || '--',
+    date: d.d || '--',
+    source: 'TWSE',
+  };
+}
+
 app.get('/api/stock', async (req, res) => {
   const cached = stockCache.get('2330');
   if (cached) return res.json(cached);
 
   try {
-    const { data } = await axios.get(
-      'https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_2330.tw&json=1&delay=0',
-      { headers: { 'Referer': 'https://mis.twse.com.tw/' }, timeout: 8000 }
-    );
-
-    const d = data?.msgArray?.[0];
-    if (!d) return res.status(502).json({ error: 'TWSE API 無資料' });
-
-    const price = parseFloat(d.z || d.y);
-    const open = parseFloat(d.o);
-    const high = parseFloat(d.h);
-    const low = parseFloat(d.l);
-    const yesterday = parseFloat(d.y);
-    const change = +(price - yesterday).toFixed(2);
-    const changePct = +((change / yesterday) * 100).toFixed(2);
-    const volume = Math.round(parseInt(d.v || 0) / 1000); // 張
-
-    const result = {
-      symbol: '2330',
-      name: d.n || '台積電',
-      price,
-      open,
-      high,
-      low,
-      yesterday,
-      change,
-      changePct,
-      volume,
-      time: d.t || '--',
-      date: d.d || '--',
-    };
+    const result = fugle
+      ? await fetchStockFromFugle()
+      : await fetchStockFromTWSE();
 
     stockCache.set('2330', result);
     res.json(result);
   } catch (err) {
+    // Fugle 失敗時自動 fallback
+    if (fugle) {
+      console.warn('Fugle failed, fallback to TWSE:', err.message);
+      try {
+        const result = await fetchStockFromTWSE();
+        result.source = 'TWSE (fallback)';
+        stockCache.set('2330', result);
+        return res.json(result);
+      } catch (e2) {
+        return res.status(502).json({ error: '股價 API 全部失敗', detail: e2.message });
+      }
+    }
     console.error('Stock API error:', err.message);
     res.status(502).json({ error: '無法取得股價', detail: err.message });
   }
@@ -85,7 +131,7 @@ app.get('/api/ptt', async (req, res) => {
       const titleEl = $(el).find('.title a');
       const title = titleEl.text().trim();
       const href = titleEl.attr('href');
-      if (!title || title.startsWith('(')) return; // skip deleted
+      if (!title || title.startsWith('(')) return;
 
       const likes = parseInt($(el).find('.nrec span').text().trim()) || 0;
       const author = $(el).find('.author').text().trim();
@@ -111,13 +157,12 @@ app.get('/api/ptt', async (req, res) => {
   }
 });
 
-// ─── Dcard 股票板 2330 ───────────────────────────────────────────────────────
+// ─── Dcard 2330 ─────────────────────────────────────────────────────────────
 app.get('/api/dcard', async (req, res) => {
   const cached = newsCache.get('dcard');
   if (cached) return res.json(cached);
 
   try {
-    // Dcard public API
     const { data } = await axios.get(
       'https://www.dcard.tw/service/api/v2/search/posts?query=2330&limit=20',
       {
@@ -149,7 +194,7 @@ app.get('/api/dcard', async (req, res) => {
   }
 });
 
-// ─── 合併輿情摘要 ─────────────────────────────────────────────────────────────
+// ─── 輿情摘要 ────────────────────────────────────────────────────────────────
 app.get('/api/sentiment', async (req, res) => {
   const cached = newsCache.get('sentiment');
   if (cached) return res.json(cached);
@@ -162,9 +207,11 @@ app.get('/api/sentiment', async (req, res) => {
 
     const pttPosts = pttRes.status === 'fulfilled' ? pttRes.value.data : [];
     const dcardPosts = dcardRes.status === 'fulfilled' ? dcardRes.value.data : [];
-    const allPosts = [...(Array.isArray(pttPosts) ? pttPosts : []), ...(Array.isArray(dcardPosts) ? dcardPosts : [])];
+    const allPosts = [
+      ...(Array.isArray(pttPosts) ? pttPosts : []),
+      ...(Array.isArray(dcardPosts) ? dcardPosts : []),
+    ];
 
-    // Simple sentiment based on keywords
     const bullish = ['買', '長線', '看多', '加碼', '目標價', '上漲', '突破', '強', '好', '漲', '正面', 'AI', '輝達', 'nvidia'];
     const bearish = ['賣', '看空', '減碼', '下跌', '跌', '破', '弱', '壞', '悲觀', '出清', '停損'];
 
@@ -198,7 +245,14 @@ app.get('/api/sentiment', async (req, res) => {
   }
 });
 
+// ─── 顯示股價來源 ─────────────────────────────────────────────────────────────
+app.get('/api/config', (req, res) => {
+  res.json({ stockSource: fugle ? 'Fugle' : 'TWSE' });
+});
+
 app.listen(PORT, () => {
+  const src = fugle ? '富果 Fugle API' : 'TWSE (未設定 FUGLE_API_KEY)';
   console.log(`\n🚀 2330-Friend 啟動成功！`);
-  console.log(`   http://localhost:${PORT}\n`);
+  console.log(`   http://localhost:${PORT}`);
+  console.log(`   股價來源：${src}\n`);
 });
