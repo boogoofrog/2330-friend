@@ -9,6 +9,16 @@ module.exports = {
     library: { type: 'module' },
   },
   experiments: { outputModule: true },
+  // spin: URIs は Wasm runtime が処理する — webpack に bundleさせない
+  externalsType: 'module',
+  externals: [
+    ({ request }, callback) => {
+      if (request && request.startsWith('spin:')) {
+        return callback(null, request);
+      }
+      callback();
+    },
+  ],
   resolve: {
     extensions: ['.ts', '.js'],
     // No Node.js built-ins in Wasm

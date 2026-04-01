@@ -25,7 +25,7 @@ allowed_outbound_hosts = [
   "https://www.dcard.tw",
 ]
 
-[component.main.config]
+[component.main.variables]
 fugle_api_key = "{{ fugle_api_key }}"
 
 [component.main.build]
