@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2330 Friend — 台積電輿情追蹤</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --yellow: #d29922;
+    --purple: #bc8cff;
+    --orange: #ff7b72;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { font-size: 22px; font-weight: 700; color: var(--blue); letter-spacing: -0.5px; }
+  .logo span { color: var(--text); }
+  .subtitle { color: var(--muted); font-size: 13px; }
+  .refresh-info { margin-left: auto; color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── Layout ── */
+  main { max-width: 1400px; margin: 0 auto; padding: 24px 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .grid-full { grid-column: 1 / -1; }
+  .grid-half { grid-column: span 1; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+
+  /* ── Card ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .card-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .card-title .badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 20px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .badge-ptt { background: #1a3a2a; color: #3fb950; }
+  .badge-dcard { background: #1a2a3a; color: #58a6ff; }
+
+  /* ── Stock Price Block ── */
+  .stock-main {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .stock-price {
+    font-size: 48px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .stock-change {
+    font-size: 18px;
+    font-weight: 600;
+    padding-bottom: 4px;
+  }
+  .up { color: var(--red); }    /* 台股紅漲 */
+  .down { color: var(--green); } /* 台股綠跌 */
+  .flat { color: var(--muted); }
+
+  .stock-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .meta-item { display: flex; flex-direction: column; gap: 3px; }
+  .meta-label { font-size: 11px; color: var(--muted); }
+  .meta-value { font-size: 14px; font-weight: 600; }
+
+  .stock-time { margin-top: 12px; font-size: 11px; color: var(--muted); }
+
+  /* ── Sentiment Gauge ── */
+  .sentiment-row { display: flex; gap: 10px; margin-bottom: 12px; }
+  .sentiment-pill {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+  }
+  .sentiment-pill .pct { font-size: 22px; font-weight: 700; }
+  .sentiment-pill .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .pill-bull { background: #0d2a1a; border: 1px solid #1a4a2a; }
+  .pill-bull .pct { color: var(--red); }
+  .pill-bear { background: #2a0d0d; border: 1px solid #4a1a1a; }
+  .pill-bear .pct { color: var(--green); }
+  .pill-neu { background: #1a1a2a; border: 1px solid #2a2a4a; }
+  .pill-neu .pct { color: var(--muted); }
+
+  .bar-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; display: flex; }
+  .bar-seg { height: 100%; transition: width .5s ease; }
+  .bar-bull { background: var(--red); }
+  .bar-bear { background: var(--green); }
+  .bar-neu { background: var(--muted); }
+  .bar-labels { display: flex; justify-content: space-between; margin-top: 5px; font-size: 11px; color: var(--muted); }
+
+  /* ── Posts List ── */
+  .posts { display: flex; flex-direction: column; gap: 1px; }
+  .post-item {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .post-item:last-child { border-bottom: none; }
+  .post-score {
+    min-width: 36px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 6px;
+    border-radius: 4px;
+    background: #1c2128;
+  }
+  .score-high { color: var(--red); }
+  .score-med { color: var(--yellow); }
+  .score-low { color: var(--muted); }
+  .post-body { flex: 1; min-width: 0; }
+  .post-title {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .post-title a { color: var(--text); text-decoration: none; }
+  .post-title a:hover { color: var(--blue); }
+  .post-meta { font-size: 11px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+  .excerpt { font-size: 12px; color: var(--muted); margin-top: 3px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; gap: 2px; margin-bottom: 14px; }
+  .tab {
+    padding: 5px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid transparent;
+    transition: all .15s;
+    color: var(--muted);
+  }
+  .tab:hover { background: #21262d; color: var(--text); }
+  .tab.active { background: #21262d; color: var(--text); border-color: var(--border); }
+
+  /* ── Loading / Error ── */
+  .loading { color: var(--muted); padding: 20px 0; text-align: center; }
+  .error { color: var(--red); padding: 8px; background: #2a0d0d; border-radius: 6px; font-size: 12px; }
+  .skeleton { background: #21262d; border-radius: 4px; animation: shimmer 1.5s infinite; }
+  @keyframes shimmer { 0%{opacity:.6}50%{opacity:1}100%{opacity:.6} }
+
+  /* ── Footer ── */
+  footer { text-align: center; padding: 24px; color: var(--muted); font-size: 11px; }
+  footer a { color: var(--blue); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">2330 <span>Friend</span></div>
+    <div class="subtitle">台積電 TSMC 輿情追蹤儀表板</div>
+  </div>
+  <div class="refresh-info">
+    <div class="dot"></div>
+    <span id="last-update">載入中...</span>
+  </div>
+</header>
+
+<main>
+  <div class="grid">
+
+    <!-- 股價 -->
+    <div class="card grid-half" id="stock-card">
+      <div class="card-title">📈 即時股價</div>
+      <div class="loading">載入股價中...</div>
+    </div>
+
+    <!-- 輿情分析 -->
+    <div class="card grid-half" id="sentiment-card">
+      <div class="card-title">🧠 輿情分析</div>
+      <div class="loading">分析中...</div>
+    </div>
+
+    <!-- PTT + Dcard 整合 -->
+    <div class="card grid-full" id="posts-card">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);">
+          💬 社群貼文
+        </div>
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab('all')">全部</div>
+          <div class="tab" onclick="switchTab('ptt')">PTT<span class="badge badge-ptt" style="margin-left:5px" id="ptt-count">0</span></div>
+          <div class="tab" onclick="switchTab('dcard')">Dcard<span class="badge badge-dcard" style="margin-left:5px" id="dcard-count">0</span></div>
+        </div>
+        <div style="margin-left:auto;font-size:11px;color:var(--muted)">每5分鐘自動刷新</div>
+      </div>
+      <div id="posts-list" class="posts">
+        <div class="loading">載入貼文中...</div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  資料來源：TWSE 台灣證券交易所 ・ PTT Stock 板 ・ Dcard &nbsp;|&nbsp;
+  股價每60秒刷新，貼文每5分鐘刷新 &nbsp;|&nbsp;
+  <a href="https://github.com/boogoofrog/2330-friend" target="_blank">GitHub</a>
+</footer>
+
+<script>
+let allPosts = [];
+let currentTab = 'all';
+
+// ─── Utils ─────────────────────────────────────────────────────────────────
+function fmt(n) { return n == null || isNaN(n) ? '--' : Number(n).toLocaleString('zh-TW'); }
+function fmtPct(n) { return n == null || isNaN(n) ? '--' : (n > 0 ? '+' : '') + n.toFixed(2) + '%'; }
+function scoreClass(n) { return n >= 50 ? 'score-high' : n >= 10 ? 'score-med' : 'score-low'; }
+
+function setLastUpdate() {
+  const now = new Date();
+  document.getElementById('last-update').textContent =
+    '最後更新 ' + now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// ─── Stock ─────────────────────────────────────────────────────────────────
+async function loadStock() {
+  const card = document.getElementById('stock-card');
+  try {
+    const res = await fetch('/api/stock');
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+
+    const dir = d.change > 0 ? 'up' : d.change < 0 ? 'down' : 'flat';
+    const sign = d.change > 0 ? '▲' : d.change < 0 ? '▼' : '—';
+    const changeStr = `${sign} ${Math.abs(d.change).toFixed(2)} (${fmtPct(d.changePct)})`;
+
+    card.innerHTML = `
+      <div class="card-title">📈 即時股價</div>
+      <div class="stock-main">
+        <div class="stock-price ${dir}">${fmt(d.price)}</div>
+        <div class="stock-change ${dir}">${changeStr}</div>
+      </div>
+      <div class="stock-meta">
+        <div class="meta-item">
+          <span class="meta-label">開盤</span>
+          <span class="meta-value">${fmt(d.open)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">最高</span>
+          <span class="meta-value up">${fmt(d.high)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">最低</span>
+          <span class="meta-value down">${fmt(d.low)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">昨收</span>
+          <span class="meta-value">${fmt(d.yesterday)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">成交量</span>
+          <span class="meta-value">${fmt(d.volume)} 張</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">股票</span>
+          <span class="meta-value" style="color:var(--blue)">${d.symbol} ${d.name}</span>
+        </div>
+      </div>
+      <div class="stock-time">⏱ ${d.date} ${d.time}</div>
+    `;
+  } catch (e) {
+    card.innerHTML = `<div class="card-title">📈 即時股價</div><div class="error">⚠️ ${e.message}</div>`;
+  }
+}
+
+// ─── Sentiment ─────────────────────────────────────────────────────────────
+async function loadSentiment() {
+  const card = document.getElementById('sentiment-card');
+  try {
+    const res = await fetch('/api/sentiment');
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+
+    const icon = d.sentiment === 'bullish' ? '🔴' : d.sentiment === 'bearish' ? '🟢' : '⚪';
+    const label = d.sentiment === 'bullish' ? '偏多' : d.sentiment === 'bearish' ? '偏空' : '中性';
+
+    card.innerHTML = `
+      <div class="card-title">🧠 輿情分析 <span style="color:var(--text);font-size:13px;letter-spacing:0;text-transform:none">${icon} ${label}</span></div>
+      <div class="sentiment-row">
+        <div class="sentiment-pill pill-bull">
+          <div class="pct">${d.bullPct}%</div>
+          <div class="lbl">看多 🔴</div>
+        </div>
+        <div class="sentiment-pill pill-bear">
+          <div class="pct">${d.bearPct}%</div>
+          <div class="lbl">看空 🟢</div>
+        </div>
+        <div class="sentiment-pill pill-neu">
+          <div class="pct">${d.neutralPct}%</div>
+          <div class="lbl">中性</div>
+        </div>
+      </div>
+      <div class="bar-track">
+        <div class="bar-seg bar-bull" style="width:${d.bullPct}%"></div>
+        <div class="bar-seg bar-neu" style="width:${d.neutralPct}%"></div>
+        <div class="bar-seg bar-bear" style="width:${d.bearPct}%"></div>
+      </div>
+      <div class="bar-labels">
+        <span>看多</span>
+        <span>共 ${d.total} 篇貼文</span>
+        <span>看空</span>
+      </div>
+      <div style="margin-top:14px;font-size:11px;color:var(--muted);line-height:1.6">
+        依關鍵字分析 PTT + Dcard 貼文標題情緒傾向。<br>
+        台股：紅色=漲，綠色=跌。
+      </div>
+    `;
+  } catch (e) {
+    card.innerHTML = `<div class="card-title">🧠 輿情分析</div><div class="error">⚠️ ${e.message}</div>`;
+  }
+}
+
+// ─── Posts ─────────────────────────────────────────────────────────────────
+async function loadPosts() {
+  try {
+    const [pttRes, dcardRes] = await Promise.allSettled([
+      fetch('/api/ptt').then(r => r.json()),
+      fetch('/api/dcard').then(r => r.json()),
+    ]);
+
+    const pttPosts = Array.isArray(pttRes.value) ? pttRes.value : [];
+    const dcardPosts = Array.isArray(dcardRes.value) ? dcardRes.value : [];
+
+    document.getElementById('ptt-count').textContent = pttPosts.length;
+    document.getElementById('dcard-count').textContent = dcardPosts.length;
+
+    allPosts = [...pttPosts, ...dcardPosts]
+      .sort((a, b) => (b.likes || 0) - (a.likes || 0));
+
+    renderPosts();
+  } catch (e) {
+    document.getElementById('posts-list').innerHTML = `<div class="error">⚠️ 無法載入貼文: ${e.message}</div>`;
+  }
+}
+
+function renderPosts() {
+  const list = document.getElementById('posts-list');
+  const filtered = currentTab === 'all' ? allPosts
+    : currentTab === 'ptt' ? allPosts.filter(p => p.source === 'PTT')
+    : allPosts.filter(p => p.source === 'Dcard');
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="loading">沒有相關貼文</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(p => {
+    const badge = p.source === 'PTT'
+      ? `<span class="badge badge-ptt">${p.board}</span>`
+      : `<span class="badge badge-dcard">${p.board}</span>`;
+    const titleHtml = p.url
+      ? `<a href="${p.url}" target="_blank" rel="noopener">${escHtml(p.title)}</a>`
+      : escHtml(p.title);
+    const excerpt = p.excerpt ? `<div class="excerpt">${escHtml(p.excerpt)}</div>` : '';
+    const comments = p.commentCount ? `・💬 ${p.commentCount}` : '';
+
+    return `
+      <div class="post-item">
+        <div class="post-score ${scoreClass(p.likes || 0)}">${fmt(p.likes)}</div>
+        <div class="post-body">
+          <div class="post-title">${titleHtml}</div>
+          ${excerpt}
+          <div class="post-meta">
+            ${badge}
+            <span>${escHtml(p.author)}</span>
+            <span>${escHtml(p.date)}</span>
+            ${comments}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => {
+    if (t.textContent.toLowerCase().startsWith(tab === 'all' ? '全' : tab)) t.classList.add('active');
+  });
+  // Fix active tab by index
+  const tabs = ['all', 'ptt', 'dcard'];
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', tabs[i] === tab);
+  });
+  renderPosts();
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Init & Polling ─────────────────────────────────────────────────────────
+async function refreshAll() {
+  await Promise.allSettled([loadStock(), loadSentiment(), loadPosts()]);
+  setLastUpdate();
+}
+
+refreshAll();
+setInterval(loadStock, 60 * 1000);           // 股價每60秒
+setInterval(() => { loadSentiment(); loadPosts(); setLastUpdate(); }, 5 * 60 * 1000); // 輿情每5分鐘
+</script>
+</body>
+</html>
