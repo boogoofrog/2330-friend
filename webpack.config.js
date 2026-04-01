@@ -13,7 +13,7 @@ module.exports = {
   externalsType: 'module',
   externals: [
     ({ request }, callback) => {
-      if (request && request.startsWith('spin:')) {
+      if (request && (request.startsWith('spin:') || request.startsWith('fermyon:'))) {
         return callback(null, request);
       }
       callback();
