@@ -16,7 +16,7 @@ component = "main"
 
 # ── 主要元件 ────────────────────────────────────────────────────────────────
 [component.main]
-source = "dist/main.wasm"
+source = "dist/bundle.js"
 key_value_stores = ["default"]
 allowed_outbound_hosts = [
   "https://mis.twse.com.tw",

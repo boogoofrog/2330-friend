@@ -9,27 +9,15 @@ module.exports = {
     library: { type: 'module' },
   },
   experiments: { outputModule: true },
-  // spin: URIs は Wasm runtime が処理する — webpack に bundleさせない
-  externalsType: 'module',
-  externals: [
-    ({ request }, callback) => {
-      if (request && (request.startsWith('spin:') || request.startsWith('fermyon:'))) {
-        return callback(null, request);
-      }
-      callback();
-    },
-  ],
   resolve: {
     extensions: ['.ts', '.js'],
-    // No Node.js built-ins in Wasm
     fallback: { path: false, fs: false, crypto: false, buffer: false },
   },
   module: {
     rules: [
       { test: /\.ts$/, use: 'ts-loader', exclude: /node_modules/ },
-      // 讓 webpack 把 .html 當作原始字串 import
       { test: /\.html$/, type: 'asset/source' },
     ],
   },
-  optimization: { minimize: false }, // componentize-js 自己會最佳化
+  optimization: { minimize: false },
 };

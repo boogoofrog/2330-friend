@@ -1,51 +1,40 @@
-import { Kv, Variables } from '@fermyon/spin-sdk';
-import { Hono } from 'hono';
+// For AutoRouter documentation refer to https://itty.dev/itty-router/routers/autorouter
+import { AutoRouter } from 'itty-router';
 import indexHtml from '../public/index.html';
 
-const app = new Hono();
+// ── Fugle API Key ──────────────────────────────────────────────────────────
+// 填入你的富果 API Key，空字串則 fallback 使用 TWSE
+// TODO: 之後改用 Spin Variables 或 env injection 傳入
+const FUGLE_API_KEY = '';
 
-// ── KV 快取（手動 TTL，因 Spin KV 不支援原生 TTL） ──────────────────────────
-interface CacheEntry<T> { v: T; t: number }
+const router = AutoRouter();
 
-function cacheGet<T>(key: string, ttlMs: number): T | null {
-  try {
-    const e = Kv.openDefault().getJson(key) as CacheEntry<T> | null;
-    if (e && Date.now() - e.t < ttlMs) return e.v;
-  } catch { /* KV 未設定時忽略 */ }
-  return null;
+// ── 型別 ────────────────────────────────────────────────────────────────────
+interface Post {
+  title: string; url: string | null; likes: number;
+  author: string; date: string; source: string; board: string;
+  excerpt?: string; commentCount?: number;
 }
-
-function cacheSet<T>(key: string, data: T): void {
-  try { Kv.openDefault().setJson(key, { v: data, t: Date.now() }); } catch {}
-}
-
-const STOCK_TTL = 60_000;   // 60 秒
-const NEWS_TTL  = 300_000;  // 5 分鐘
 
 // ── 股價：Fugle 優先，fallback TWSE ─────────────────────────────────────────
 async function getStockData() {
-  let fugleKey = '';
-  try { fugleKey = Variables.get('fugle_api_key') ?? ''; } catch {}
-
-  if (fugleKey) {
+  if (FUGLE_API_KEY) {
     const r = await fetch(
       'https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/2330',
-      { headers: { 'X-API-KEY': fugleKey } },
+      { headers: { 'X-API-KEY': FUGLE_API_KEY } },
     );
     if (r.ok) {
       const q = await r.json() as Record<string, unknown>;
-      const price    = (q.closePrice ?? q.lastPrice ?? q.previousClose) as number;
-      const prev     = q.previousClose as number;
-      const change   = +(price - prev).toFixed(2);
-      const vol      = (q.total as Record<string, number> | undefined)?.tradeVolume ?? null;
+      const price  = (q.closePrice ?? q.lastPrice ?? q.previousClose) as number;
+      const prev   = q.previousClose as number;
+      const change = +(price - prev).toFixed(2);
+      const vol    = (q.total as Record<string, number> | undefined)?.tradeVolume ?? null;
       return {
         symbol: '2330', name: (q.name as string) || '台積電', price,
         open: q.openPrice as number, high: q.highPrice as number, low: q.lowPrice as number,
         yesterday: prev, change, changePct: +((change / prev) * 100).toFixed(2),
         volume: vol,
-        time: q.lastUpdated
-          ? new Date(q.lastUpdated as string).toLocaleTimeString('zh-TW')
-          : '--',
+        time: q.lastUpdated ? new Date(q.lastUpdated as string).toLocaleTimeString('zh-TW') : '--',
         date: new Date().toLocaleDateString('zh-TW'),
         source: 'Fugle',
       };
@@ -74,45 +63,21 @@ async function getStockData() {
   };
 }
 
-app.get('/api/stock', async (c) => {
-  const cached = cacheGet('stock', STOCK_TTL);
-  if (cached) return c.json(cached);
-  try {
-    const result = await getStockData();
-    cacheSet('stock', result);
-    return c.json(result);
-  } catch (err: unknown) {
-    return c.json({ error: '無法取得股價', detail: String(err) }, 502);
-  }
-});
-
-// ── PTT（用 regex 解析 HTML，因 Wasm 環境無法使用 cheerio） ─────────────────
-interface Post {
-  title: string; url: string | null; likes: number;
-  author: string; date: string; source: string; board: string;
-  excerpt?: string; commentCount?: number;
-}
-
+// ── PTT（regex 解析 HTML） ────────────────────────────────────────────────────
 function parsePttPosts(html: string): Post[] {
   const posts: Post[] = [];
-  // 每個 .r-ent block（PTT 的文章列表項目）
   const blockRe = /<div class="r-ent">([\s\S]*?)<\/div>\s*<\/div>/g;
   let m: RegExpExecArray | null;
   while ((m = blockRe.exec(html)) !== null) {
     const b = m[1];
-    // 標題 + 連結（已刪文沒有 <a> 標籤）
     const t = b.match(/<a href="(\/bbs\/Stock\/[^"]+)">([^<]+)<\/a>/);
     if (!t) continue;
     const title = t[2].trim();
-    if (title.startsWith('(')) continue; // 已刪文
-
-    // 推文數（可能是數字、「爆」、「XX」）
+    if (title.startsWith('(')) continue;
     const rawLikes = b.match(/<span[^>]*>(\d+|爆|X+)<\/span>/)?.[1] ?? '0';
     const likes = rawLikes === '爆' ? 100 : rawLikes.startsWith('X') ? -rawLikes.length * 10 : parseInt(rawLikes);
-
     const author = b.match(/<div class="author">([^<]+)<\/div>/)?.[1]?.trim() ?? '';
     const date   = b.match(/<div class="date">\s*([^<]+)\s*<\/div>/)?.[1]?.trim() ?? '';
-
     posts.push({ title, url: `https://www.ptt.cc${t[1]}`, likes, author, date, source: 'PTT', board: 'Stock' });
   }
   return posts.slice(0, 20);
@@ -125,18 +90,6 @@ async function getPttPosts(): Promise<Post[]> {
   if (!r.ok) throw new Error(`PTT HTTP ${r.status}`);
   return parsePttPosts(await r.text());
 }
-
-app.get('/api/ptt', async (c) => {
-  const cached = cacheGet<Post[]>('ptt', NEWS_TTL);
-  if (cached) return c.json(cached);
-  try {
-    const posts = await getPttPosts();
-    cacheSet('ptt', posts);
-    return c.json(posts);
-  } catch (err: unknown) {
-    return c.json({ error: '無法抓取 PTT', detail: String(err) }, 502);
-  }
-});
 
 // ── Dcard ──────────────────────────────────────────────────────────────────
 interface DcardApiPost {
@@ -164,54 +117,65 @@ async function getDcardPosts(): Promise<Post[]> {
   }));
 }
 
-app.get('/api/dcard', async (c) => {
-  const cached = cacheGet<Post[]>('dcard', NEWS_TTL);
-  if (cached) return c.json(cached);
-  try {
-    const posts = await getDcardPosts();
-    cacheSet('dcard', posts);
-    return c.json(posts);
-  } catch (err: unknown) {
-    return c.json({ error: '無法抓取 Dcard', detail: String(err) }, 502);
-  }
-});
-
-// ── 輿情分析 ────────────────────────────────────────────────────────────────
+// ── 輿情分析 ─────────────────────────────────────────────────────────────────
 const BULL_WORDS = ['買','長線','看多','加碼','目標價','上漲','突破','漲','正面','AI','輝達','nvidia'];
 const BEAR_WORDS = ['賣','看空','減碼','下跌','跌','破','悲觀','出清','停損'];
 
-app.get('/api/sentiment', async (c) => {
-  const cached = cacheGet('sentiment', NEWS_TTL);
-  if (cached) return c.json(cached);
+// ── Routes ──────────────────────────────────────────────────────────────────
+router
+  .get('/', () => new Response(indexHtml as string, {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  }))
 
-  const [pttR, dcardR] = await Promise.allSettled([getPttPosts(), getDcardPosts()]);
-  const all: Post[] = [
-    ...(pttR.status   === 'fulfilled' ? pttR.value   : []),
-    ...(dcardR.status === 'fulfilled' ? dcardR.value : []),
-  ];
+  .get('/api/stock', async () => {
+    try {
+      return Response.json(await getStockData());
+    } catch (err) {
+      return Response.json({ error: '無法取得股價', detail: String(err) }, { status: 502 });
+    }
+  })
 
-  let b = 0, s = 0, n = 0;
-  for (const p of all) {
-    const txt = `${p.title} ${p.excerpt ?? ''}`.toLowerCase();
-    const bc = BULL_WORDS.filter(w => txt.includes(w)).length;
-    const sc = BEAR_WORDS.filter(w => txt.includes(w)).length;
-    if (bc > sc) b++; else if (sc > bc) s++; else n++;
-  }
+  .get('/api/ptt', async () => {
+    try {
+      return Response.json(await getPttPosts());
+    } catch (err) {
+      return Response.json({ error: '無法抓取 PTT', detail: String(err) }, { status: 502 });
+    }
+  })
 
-  const total = all.length || 1;
-  const result = {
-    total: all.length, bullish: b, bearish: s, neutral: n,
-    bullPct:    Math.round((b / total) * 100),
-    bearPct:    Math.round((s / total) * 100),
-    neutralPct: Math.round((n / total) * 100),
-    sentiment: b > s ? 'bullish' : s > b ? 'bearish' : 'neutral',
-  };
-  cacheSet('sentiment', result);
-  return c.json(result);
+  .get('/api/dcard', async () => {
+    try {
+      return Response.json(await getDcardPosts());
+    } catch (err) {
+      return Response.json({ error: '無法抓取 Dcard', detail: String(err) }, { status: 502 });
+    }
+  })
+
+  .get('/api/sentiment', async () => {
+    const [pttR, dcardR] = await Promise.allSettled([getPttPosts(), getDcardPosts()]);
+    const all: Post[] = [
+      ...(pttR.status   === 'fulfilled' ? pttR.value   : []),
+      ...(dcardR.status === 'fulfilled' ? dcardR.value : []),
+    ];
+    let b = 0, s = 0, n = 0;
+    for (const p of all) {
+      const txt = `${p.title} ${p.excerpt ?? ''}`.toLowerCase();
+      const bc = BULL_WORDS.filter(w => txt.includes(w)).length;
+      const sc = BEAR_WORDS.filter(w => txt.includes(w)).length;
+      if (bc > sc) b++; else if (sc > bc) s++; else n++;
+    }
+    const total = all.length || 1;
+    return Response.json({
+      total: all.length, bullish: b, bearish: s, neutral: n,
+      bullPct: Math.round((b / total) * 100),
+      bearPct: Math.round((s / total) * 100),
+      neutralPct: Math.round((n / total) * 100),
+      sentiment: b > s ? 'bullish' : s > b ? 'bearish' : 'neutral',
+    });
+  });
+
+// ── Spin 入口（Service Worker 模式） ─────────────────────────────────────────
+//@ts-ignore
+addEventListener('fetch', (event: FetchEvent) => {
+  event.respondWith(router.fetch(event.request));
 });
-
-// ── 前端 HTML ────────────────────────────────────────────────────────────────
-app.get('/', (c) => c.html(indexHtml as string));
-
-// ── Spin 入口 ────────────────────────────────────────────────────────────────
-export default app;
