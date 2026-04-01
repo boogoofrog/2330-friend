@@ -1,5 +1,5 @@
 // For AutoRouter documentation refer to https://itty.dev/itty-router/routers/autorouter
-import { AutoRouter } from 'itty-router';
+import { AutoRouter, json } from 'itty-router';
 import indexHtml from '../public/index.html';
 
 // ── Fugle API Key ──────────────────────────────────────────────────────────
@@ -129,25 +129,25 @@ router
 
   .get('/api/stock', async () => {
     try {
-      return Response.json(await getStockData());
+      return json(await getStockData());
     } catch (err) {
-      return Response.json({ error: '無法取得股價', detail: String(err) }, { status: 502 });
+      return json({ error: '無法取得股價', detail: String(err) }, { status: 502 });
     }
   })
 
   .get('/api/ptt', async () => {
     try {
-      return Response.json(await getPttPosts());
+      return json(await getPttPosts());
     } catch (err) {
-      return Response.json({ error: '無法抓取 PTT', detail: String(err) }, { status: 502 });
+      return json({ error: '無法抓取 PTT', detail: String(err) }, { status: 502 });
     }
   })
 
   .get('/api/dcard', async () => {
     try {
-      return Response.json(await getDcardPosts());
+      return json(await getDcardPosts());
     } catch (err) {
-      return Response.json({ error: '無法抓取 Dcard', detail: String(err) }, { status: 502 });
+      return json({ error: '無法抓取 Dcard', detail: String(err) }, { status: 502 });
     }
   })
 
@@ -165,7 +165,7 @@ router
       if (bc > sc) b++; else if (sc > bc) s++; else n++;
     }
     const total = all.length || 1;
-    return Response.json({
+    return json({
       total: all.length, bullish: b, bearish: s, neutral: n,
       bullPct: Math.round((b / total) * 100),
       bearPct: Math.round((s / total) * 100),
