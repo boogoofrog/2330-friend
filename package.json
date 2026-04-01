@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "台積電 TSMC 輿情追蹤儀表板 — Akamai Wasm Functions (Fermyon Spin)",
   "scripts": {
-    "build": "webpack --mode=production && npx @bytecodealliance/componentize-js dist/bundle.js --wit-path node_modules/@fermyon/spin-sdk/wit --world spin-imports -o dist/main.wasm",
+    "build": "webpack --mode=production && node scripts/componentize.mjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
