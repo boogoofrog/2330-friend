@@ -1,19 +1,21 @@
 {
   "name": "2330-friend",
   "version": "1.0.0",
-  "description": "台股2330 TSMC 輿論追蹤機器人 - PTT/Dcard/股價整合儀表板",
-  "main": "server.js",
+  "description": "台積電 TSMC 輿情追蹤儀表板 — Akamai Wasm Functions (Fermyon Spin)",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "build": "webpack --mode=production && npx @bytecodealliance/componentize-js dist/bundle.js --wit-path node_modules/@fermyon/spin-sdk/wit --world spin-imports -o dist/main.wasm",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@fugle/marketdata": "^1.4.2",
-    "axios": "^1.6.0",
-    "cheerio": "^1.0.0",
-    "cors": "^2.8.5",
-    "dotenv": "^17.3.1",
-    "express": "^4.18.2",
-    "node-cache": "^5.1.2"
+    "@fermyon/spin-sdk": "^3.0.0",
+    "hono": "^4.5.0"
+  },
+  "devDependencies": {
+    "@bytecodealliance/componentize-js": "^0.10.0",
+    "@types/node": "^20.0.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.4.0",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4"
   }
 }

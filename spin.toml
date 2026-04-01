@@ -1,0 +1,33 @@
+spin_manifest_version = 2
+
+[application]
+name = "2330-friend"
+version = "1.0.0"
+description = "台積電 TSMC 輿情追蹤儀表板 — Akamai Wasm Functions"
+
+# ── 變數（部署時用 --variable 傳入）─────────────────────────────────────────
+[variables]
+fugle_api_key = { required = false, default = "" }
+
+# ── HTTP 觸發 ───────────────────────────────────────────────────────────────
+[[trigger.http]]
+route = "/..."
+component = "main"
+
+# ── 主要元件 ────────────────────────────────────────────────────────────────
+[component.main]
+source = "dist/main.wasm"
+key_value_stores = ["default"]
+allowed_outbound_hosts = [
+  "https://mis.twse.com.tw",
+  "https://api.fugle.tw",
+  "https://www.ptt.cc",
+  "https://www.dcard.tw",
+]
+
+[component.main.config]
+fugle_api_key = "{{ fugle_api_key }}"
+
+[component.main.build]
+command = "npm run build"
+watch   = ["src/**/*.*", "public/**/*.*"]
